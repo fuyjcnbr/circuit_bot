@@ -114,6 +114,7 @@ class Memory:
 
 
 
+
 class SafeExecute:
 
     def __init__(self, memory=None, log=None, key=None, get_dict_func_on_error=None, repeat=1, sleep_on_repeat=0.5):
@@ -177,7 +178,7 @@ class SafeExecute:
                         s = str(e).lower()
                         get_dict_func = self.get_obj(instance, self.get_dict_func_on_error)
                         d = get_dict_func()
-                        li = [d[k] for k in d.keys() if s.find(k.lower())]
+                        li = [d[k] for k in d.keys() if s.find(k.lower()) >= 0]
                         if len(li) > 0:
                             func2 = li[0]
                             try:
@@ -193,7 +194,6 @@ class SafeExecute:
                 time.sleep(self.sleep_on_repeat)
         func.wrapped = True
         return func
-
 
 
 
