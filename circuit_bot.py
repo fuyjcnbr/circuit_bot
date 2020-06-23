@@ -114,17 +114,28 @@ class Memory:
 
 
 
-
 class SafeExecute:
 
     def __init__(self, memory=None, log=None, key=None, dict_func_on_error=None, repeat=1, sleep_on_repeat=0.5):
         print("__init__")
         self.key = key
-        self.memory_name = memory
-        self.tu_log_names = log
+        self.memory = memory
+        self.log = log
         self.dict_func_on_error = dict_func_on_error
         self.repeat = repeat
         self.sleep_on_repeat = sleep_on_repeat
+
+
+    def get_obj(self, instance, s):
+        li = s.split(".")
+        if len(li) == 0:
+            return None
+        if li[0] == "self":
+            li = li[1:]
+        x = instance
+        for name in li:
+            x = getattr(x, name)
+        return x
 
     def __call__(self, *args0, **kwargs0):
         def func(*args1, **kwargs1):
@@ -139,25 +150,25 @@ class SafeExecute:
                 try:
                     res = f(*args1, **kwargs1)
                     d = {"operation": f.__name__, "dt_start": 0, "duration": 0, "error": None, "output": res}
-                    if self.tu_log_names is not None:
-                        log_obj = getattr(instance, self.tu_log_names[0])
-                        log_func = getattr(log_obj, self.tu_log_names[1])
+                    if self.log is not None:
+                        # log_obj = getattr(instance, self.log[0])
+                        # log_func = getattr(log_obj, self.log[1])
+                        log_func = self.get_obj(instance, self.log)
                         log_func("{}({}) returned {}".format(f.__name__, args1, str(res)))
-                    if self.memory_name is not None:
-                        memory = getattr(instance, self.memory_name)
+                    if self.memory is not None:
+                        memory = self.get_obj(instance, self.memory)
                         memory.set(key, d)
                         return
                     else:
                         return d
                 except Exception as e:
                     d = {"operation": f.__name__, "dt_start": 0, "duration": 0, "error": str(e), "output": None}
-                    if self.tu_log_names is not None:
-                        log_obj = getattr(instance, self.tu_log_names[0])
-                        log_func = getattr(log_obj, self.tu_log_names[1])
+                    if self.log is not None:
+                        log_func = self.get_obj(instance, self.log)
                         log_func("{}({}) error {}".format(f.__name__, args1, str(e)))
                     if i >= self.repeat - 1:
-                        if self.memory_name is not None:
-                            memory = getattr(instance, self.memory_name)
+                        if self.memory is not None:
+                            memory = self.get_obj(instance, self.memory)
                             memory.set(key, d)
                             return
                         else:
@@ -169,14 +180,12 @@ class SafeExecute:
                             func2 = li[0]
                             try:
                                 func2()
-                                if self.tu_log_names is not None:
-                                    log_obj = getattr(instance, self.tu_log_names[0])
-                                    log_func = getattr(log_obj, self.tu_log_names[1])
+                                if self.log is not None:
+                                    log_func = self.get_obj(instance, self.log)
                                     log_func("error handler {} success".format(func2.__name__))
                             except Exception as e2:
-                                if self.tu_log_names is not None:
-                                    log_obj = getattr(instance, self.tu_log_names[0])
-                                    log_func = getattr(log_obj, self.tu_log_names[1])
+                                if self.log is not None:
+                                    log_func = self.get_obj(instance, self.log)
                                     log_func("error handler {} error {}".format(func2.__name__, str(e2)))
                 i += 1
                 time.sleep(self.sleep_on_repeat)
