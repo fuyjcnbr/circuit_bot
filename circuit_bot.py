@@ -114,12 +114,13 @@ class Memory:
 
 
 
+
 class SafeExecute:
 
-    def __init__(self, memory=None, log_func=None, key=None, dict_func_on_error=None, repeat=1, sleep_on_repeat=0.5):
+    def __init__(self, memory_name=None, log_func=None, key=None, dict_func_on_error=None, repeat=1, sleep_on_repeat=0.5):
         print("__init__")
         self.key = key
-        self.memory = memory
+        self.memory_name = memory_name
         self.log_func = log_func
         self.dict_func_on_error = dict_func_on_error
         self.repeat = repeat
@@ -139,19 +140,25 @@ class SafeExecute:
                     res = f(*args1, **kwargs1)
                     d = {"operation": f.__name__, "dt_start": 0, "duration": 0, "error": None, "output": res}
                     if self.log_func is not None:
-                        self.log_func("{}({}) returned {}".format(f.__name__, args1, str(res)))
-                    if self.memory is not None:
-                        self.memory.set(key, d)
+                        log_obj = getattr(instance, self.log_func[0])
+                        log_func = getattr(log_obj, self.log_func[1])
+                        log_func("{}({}) returned {}".format(f.__name__, args1, str(res)))
+                    if self.memory_name is not None:
+                        memory = getattr(instance, self.memory_name)
+                        memory.set(key, d)
                         return
                     else:
                         return d
                 except Exception as e:
                     d = {"operation": f.__name__, "dt_start": 0, "duration": 0, "error": str(e), "output": None}
                     if self.log_func is not None:
-                        self.log_func("{}({}) error {}".format(f.__name__, args1, str(e)))
+                        log_obj = getattr(instance, self.log_func[0])
+                        log_func = getattr(log_obj, self.log_func[1])
+                        log_func("{}({}) error {}".format(f.__name__, args1, str(e)))
                     if i >= self.repeat - 1:
-                        if self.memory is not None:
-                            self.memory.set(key, d)
+                        if self.memory_name is not None:
+                            memory = getattr(instance, self.memory_name)
+                            memory.set(key, d)
                             return
                         else:
                             return d
@@ -163,15 +170,18 @@ class SafeExecute:
                             try:
                                 func2()
                                 if self.log_func is not None:
-                                    self.log_func("error handler {} success".format(func2.__name__))
+                                    log_obj = getattr(instance, self.log_func[0])
+                                    log_func = getattr(log_obj, self.log_func[1])
+                                    log_func("error handler {} success".format(func2.__name__))
                             except Exception as e2:
                                 if self.log_func is not None:
-                                    self.log_func("error handler {} error {}".format(func2.__name__, str(e2)))
+                                    log_obj = getattr(instance, self.log_func[0])
+                                    log_func = getattr(log_obj, self.log_func[1])
+                                    log_func("error handler {} error {}".format(func2.__name__, str(e2)))
                 i += 1
                 time.sleep(self.sleep_on_repeat)
         func.wrapped = True
         return func
-
 
 
 
