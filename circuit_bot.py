@@ -1,37 +1,184 @@
 
+
+
 import subprocess
 import sys
 import inspect
 import functools
+import time
 
+from uuid import uuid1
+import logging
+from datetime import datetime
+import os
+
+
+class Log:
+
+    def __init__(self, log_source, log_dir, log_level):
+        self.log_dir = log_dir
+        self.log_file_prefix = log_source
+
+        self.logger = logging.getLogger(log_source)
+        self.dt = datetime.now()
+
+        self.set_log_file(file_path=self.get_log_file_path(self.dt))
+        self.logger.setLevel(self.log_level_of_str(log_level))
+
+        # stdo = logging.StreamHandler()
+        # self.logger.addHandler(stdo)
+
+        self.uidd = str(uuid1())
+
+    @staticmethod
+    def log_level_of_str(level):
+        s = level.upper()
+        if s == "DEBUG":
+            return logging.DEBUG
+        elif s == "INFO":
+            return logging.INFO
+        elif s == "WARNING":
+            return logging.WARNING
+        elif s == "ERROR":
+            return logging.ERROR
+        elif s == "CRITICAL":
+            return logging.CRITICAL
+        else:
+            return logging.INFO
+
+    def get_log_file_path(self, dt):
+        # file_path = os.path.join(self.log_dir, "{}_{}.log".format(self.log_file_prefix, datetime.strftime(dt, "%Y_%m_%d_%H_%M")))
+        file_path = os.path.join(self.log_dir, "{}_{}.log".format(self.log_file_prefix, datetime.strftime(dt, "%Y_%m_%d")))
+        self.logger.debug("file_path={}".format(file_path))
+        return file_path
+
+    def set_log_file(self, file_path):
+        for h in self.logger.handlers:
+            self.logger.removeHandler(h)
+        f = logging.FileHandler(file_path)
+        f.setFormatter(logging.Formatter('%(asctime)s;%(name)s;%(levelname)s;%(message)s'))
+        self.logger.addHandler(f)
+        stdo = logging.StreamHandler()
+        self.logger.addHandler(stdo)
+
+
+    def change_file(self):
+        dt = datetime.now()
+        if dt.day != self.dt.day:# or dt.minute != self.dt.minute:
+            self.dt = dt
+            file_path = self.get_log_file_path(self.dt)
+            self.set_log_file(file_path)
+
+    def debug(self, msg):
+        self.change_file()
+        self.logger.debug("{};{}".format(self.uidd, msg))
+
+    def info(self, msg):
+        self.change_file()
+        self.logger.info("{};{}".format(self.uidd, msg))
+
+    def warning(self, msg):
+        self.change_file()
+        self.logger.warning("{};{}".format(self.uidd, msg))
+
+    def error(self, msg):
+        self.change_file()
+        self.logger.error("{};{}".format(self.uidd, msg))
+
+    def critical(self, msg):
+        self.change_file()
+        self.logger.critical("{};{}".format(self.uidd, msg))
+
+
+class Memory:
+
+    def __init__(self, memory=None):
+        self.memory = {}
+        if memory is not None:
+            self.memory = memory
+
+    def set(self, key, x):
+        self.memory[key] = x
+
+    def get(self, key):
+        return self.memory[key]
+
+    def get_output(self, key):
+        return self.memory[key]["output"]
+
+    def get_error(self, key):
+        return self.memory[key]["error"]
+
+    def get_memory(self):
+        return self.memory
 
 
 
 class SafeExecute:
 
-    def __init__(self, is_memory=True, group_name=None):
+    def __init__(self, memory=None, log_func=None, key=None, dict_func_on_error=None, repeat=1, sleep_on_repeat=0.5):
         print("__init__")
-        self.group_name = group_name
-        self.is_memory = is_memory
+        self.key = key
+        self.memory = memory
+        self.log_func = log_func
+        self.dict_func_on_error = dict_func_on_error
+        self.repeat = repeat
+        self.sleep_on_repeat = sleep_on_repeat
 
     def __call__(self, *args0, **kwargs0):
         def func(*args1, **kwargs1):
             instance = args1[0]
             f = args0[0]
-            try:
-                res = f(*args1, **kwargs1)
-                d = {"operation": f.__name__, "dt_start": 0, "duration": 0, "error": None, "output": res}
-                if self.is_memory:
-                    instance.memory[f.__name__] = d
-                return d
-            except Exception as e:
-                d = {"operation": f.__name__, "dt_start": 0, "duration": 0, "error": str(e), "output": None}
-                if self.is_memory:
-                    instance.memory[f.__name__] = d
-                return d
+            if self.key is None:
+                key = (instance.__class__.__name__, f.__name__)
+            else:
+                key = self.key
+            i = 0
+            while i < self.repeat:
+                try:
+                    res = f(*args1, **kwargs1)
+                    d = {"operation": f.__name__, "dt_start": 0, "duration": 0, "error": None, "output": res}
+                    if self.log_func is not None:
+                        self.log_func("{}({}) returned {}".format(f.__name__, args1, str(res)))
+                    if self.memory is not None:
+                        self.memory.set(key, d)
+                        return
+                    else:
+                        return d
+                except Exception as e:
+                    d = {"operation": f.__name__, "dt_start": 0, "duration": 0, "error": str(e), "output": None}
+                    if self.log_func is not None:
+                        self.log_func("{}({}) error {}".format(f.__name__, args1, str(e)))
+                    if i >= self.repeat - 1:
+                        if self.memory is not None:
+                            self.memory.set(key, d)
+                            return
+                        else:
+                            return d
+                    else:
+                        s = str(e).lower()
+                        li = [self.dict_func_on_error[k] for k in self.dict_func_on_error.keys() if s.find(k.lower())]
+                        if len(li) > 0:
+                            func2 = li[0]
+                            try:
+                                func2()
+                                if self.log_func is not None:
+                                    self.log_func("error handler {} success".format(func2.__name__))
+                            except Exception as e2:
+                                if self.log_func is not None:
+                                    self.log_func("error handler {} error {}".format(func2.__name__, str(e2)))
+                i += 1
+                time.sleep(self.sleep_on_repeat)
         func.wrapped = True
-        func.group_name = self.group_name
         return func
+
+
+
+
+
+
+
+
 
 
 class MemoryArgs:
